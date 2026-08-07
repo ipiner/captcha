@@ -1,0 +1,48 @@
+{
+  "name": "ipiner/captcha",
+  "description": "Pin 验证码",
+  "keywords": [
+    "laravel",
+    "pin",
+    "captcha",
+    "verification"
+  ],
+  "license": "MIT",
+  "require": {
+    "ipiner/pin": "^1.0"
+  },
+  "require-dev": {
+    "dedoc/scramble": "^0.13.22",
+    "laravel/pint": "^1.15",
+    "orchestra/testbench": "^11.1",
+    "pestphp/pest": "^4.7",
+    "phpstan/phpstan": "^2.2",
+    "phpunit/phpunit": "^12"
+  },
+  "autoload": {
+    "psr-4": {
+      "Pin\\Captcha\\": "src"
+    }
+  },
+  "autoload-dev": {
+    "psr-4": {
+      "Pin\\Tests\\": "tests"
+    }
+  },
+  "config": {
+    "preferred-install": "dist",
+    "sort-packages": true,
+    "allow-plugins": {
+      "pestphp/pest-plugin": true
+    }
+  },
+  "extra": {
+    "laravel": {
+      "providers": [
+        "Pin\\Captcha\\CaptchaServiceProvider"
+      ]
+    }
+  },
+  "minimum-stability": "stable",
+  "prefer-stable": true
+}
