@@ -50,7 +50,7 @@ class CaptchaValidator
         [$input, $encoded] = explode('|', $payload);
         $res->input = $input;
 
-        if ($plain = TransformsRequest::resolvePlainInput($input)) {
+        if ($plain = TransformsRequest::resolvePlainValue($input)) {
             return $res->err($plain === $encoded ? null : Errors::CaptchaMismatch);
         }
 
