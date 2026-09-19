@@ -17,17 +17,15 @@ class CaptchaController extends Controller
     /**
      * 验证码
      *
-     * @return ApiResponse<array{token: string, data: string, width: int, height: int, enabled: null|bool}>
+     * @return ApiResponse<array{token: string, data: string, width: int, height: int, enabled?: bool}>
      */
     public function generate(): ApiResponse
     {
         $data = Captcha::generate(null, app()->request->query('theme') === 'dark');
+        $data = array_merge(config('pin.captcha.routes.generate.extras', []), $data);
         unset($data['text']);
 
-        return $this->success(array_merge(
-            config('pin.captcha.routes.generate.extras'),
-            $data
-        ));
+        return $this->success($data);
     }
 
     /**
@@ -41,7 +39,7 @@ class CaptchaController extends Controller
      */
     public function availableRules(): ApiResponse
     {
-        $rules = array_map(function (array $item) {
+        $rules = array_map(static function (array $item): array {
             return [
                 'label' => $item['label'],
                 'value' => $item['rule'],

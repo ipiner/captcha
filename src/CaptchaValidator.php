@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Pin\Captcha;
 
 use Pin\Http\Middleware\TransformsRequest;
+use Pin\Token\Exceptions\TokenException;
 use Pin\Token\Exceptions\TokenExpiredException;
 
 /**
@@ -27,10 +28,10 @@ class CaptchaValidator
      */
     public function validate(string $payload, ?string $rule = null): void
     {
-        $res = $this->verify($payload, $rule);
+        $result = $this->verify($payload, $rule);
 
-        if ($res->err !== null) {
-            throw new CaptchaException($res->err);
+        if ($result->err !== null) {
+            throw new CaptchaException($result->err);
         }
     }
 
@@ -39,52 +40,44 @@ class CaptchaValidator
      */
     public function verify(string $payload, ?string $rule = null): VerifyRes
     {
-        $res = new VerifyRes();
+        $result = new VerifyRes();
+        $parts = explode('|', $payload, 3);
 
-        // payload 基础格式校验
-        if (! str_contains($payload, '|')) {
-            return $res->err(Errors::CaptchaValueInvalid);
+        if (count($parts) !== 2 || $parts[0] === '' || $parts[1] === '') {
+            return $result->err(Errors::CaptchaValueInvalid);
         }
 
-        // 拆分 input 和 encoded token
-        [$input, $encoded] = explode('|', $payload);
-        $res->input = $input;
+        [$input, $encoded] = $parts;
+        $result->input = $input;
 
-        if ($plain = TransformsRequest::resolvePlainValue($input)) {
-            return $res->err($plain === $encoded ? null : Errors::CaptchaMismatch);
+        $plain = TransformsRequest::resolvePlainValue($input);
+        if ($plain !== null) {
+            return $result->err($plain === $encoded ? null : Errors::CaptchaMismatch);
         }
 
-        // 解码 token（包含 text / rule / expire）
         try {
             $token = app('pin.captcha.token')->decode($encoded);
-            $res->token = $token;
         } catch (TokenExpiredException) {
-            return $res->err(Errors::CaptchaExpired);
-        } catch (CaptchaException) {
-            return $res->err(Errors::CaptchaMissing);
+            return $result->err(Errors::CaptchaExpired);
+        } catch (TokenException) {
+            return $result->err(Errors::CaptchaTokenInvalid);
+        } catch (CaptchaException $exception) {
+            return $result->err($exception->error);
         }
 
-        /**
-         * rule 优先级：
-         * 1. 外部传入 rule
-         * 2. token 内 rule
-         */
-        $rule = $rule ?: $token->rule;
-        $res->rule = $rule;
+        $result->token = $token;
+        $result->text = $token->text;
+        // 外部规则优先；空规则沿用 Token 规则，最终回退到正常验证。
+        $result->rule = $rule ?: ($token->rule ?: Rule::Normal->value);
 
-        /**
-         * 解析规则字符串：
-         * 返回 [Rule, param]
-         */
-        [$rule, $param] = Rule::parse($rule);
-        $res->text = $token->text;
-        $res->expectedInput = $this->transform($rule, $param, $res->text);
-
-        if ($this->check($res->expectedInput, $input)) {
-            return $res;
+        try {
+            [$parsedRule, $parameter] = Rule::parse($result->rule);
+            $result->expectedInput = $this->transform($parsedRule, $parameter, $result->text);
+        } catch (CaptchaRuleException) {
+            return $result->err(Errors::CaptchaRuleInvalid);
         }
 
-        return $res->err(Errors::CaptchaMismatch);
+        return $result->err($this->check($result->expectedInput, $input) ? null : Errors::CaptchaMismatch);
     }
 
     /**
@@ -97,7 +90,7 @@ class CaptchaValidator
      */
     protected function check(string $expectedInput, string $input): bool
     {
-        return strtoupper($expectedInput) === strtoupper($input);
+        return hash_equals(strtoupper($expectedInput), strtoupper($input));
     }
 
     /**
@@ -117,41 +110,28 @@ class CaptchaValidator
         ?string $param,
         string $text
     ): string {
-        $n = (int) $param;
+        $position = (int) $param;
+        $requiredLength = match ($rule) {
+            Rule::FirstN, Rule::LastN, Rule::PrependN, Rule::AppendN => $position,
+            Rule::Order => (int) max(str_split($param)),
+            default => 0,
+        };
+
+        if ($requiredLength > strlen($text)) {
+            throw new CaptchaRuleException('验证码长度不足以应用指定规则');
+        }
 
         return match ($rule) {
             Rule::Normal => $text,
             Rule::Rev => strrev($text),
-            Rule::FirstN => substr($text, 0, $n),
-            Rule::LastN => substr($text, -$n),
-
-            // 前置拼接规则
-            // actual = 6809, n=2 => "6" + "6809"
-            Rule::PrependN => $text[$n - 1].$text,
-
-            // 后置拼接规则
-            // actual = 6809, n=2 => "6809" + "8"
-            Rule::AppendN => $text.$text[$n - 1],
-
-            /**
-             * 顺序重排规则
-             *
-             * param 示例：
-             * "2134"
-             *
-             * 表示：
-             * - 第2位
-             * - 第1位
-             * - 第3位
-             * - 第4位
-             */
+            Rule::FirstN => substr($text, 0, $position),
+            Rule::LastN => substr($text, -$position),
+            Rule::PrependN => $text[$position - 1].$text,
+            Rule::AppendN => $text.$text[$position - 1],
             Rule::Order => implode('', array_map(
-                fn ($i) => $text[$i - 1] ?? '',
+                static fn (string $index): string => $text[(int) $index - 1],
                 str_split($param)
             )),
-
-            // 固定值规则
-            // 忽略 actual，直接使用 param
             Rule::Fixed => $param ?? '',
         };
     }

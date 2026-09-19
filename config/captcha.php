@@ -1,7 +1,12 @@
 <?php
 
+declare(strict_types=1);
+
 return [
     'config' => [
+        // 默认验证规则，null 表示 normal；详见 Pin\Captcha\Rule。
+        'rule' => null,
+
         /**
          * 验证码图片宽度（像素）
          *
@@ -85,7 +90,11 @@ return [
     /**
      * 是否启用缓存
      *
-     * 启用时，验证码只检验一次
+     * 启用时，验证码在第一次校验时即被消费，无论输入是否正确。
+     * 关闭后，Token 在有效期内可以重复校验。
      */
     'cache_enabled' => env('CAPTCHA_CACHE_ENABLED', true),
+
+    // 缓存验证码使用的 Redis 连接名称。
+    'redis_connection' => 'default',
 ];

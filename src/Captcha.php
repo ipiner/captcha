@@ -42,7 +42,7 @@ class Captcha
     /**
      * 验证码验证
      *
-     * payload 格式：`input.encoded`
+     * payload 格式：`input|encoded`
      *
      * 其中：
      * - input: 用户输入的验证码

@@ -68,6 +68,13 @@ it('throws exception for invalid captcha rules', function (
         'last:0',
         '参数必须为 1/2/3',
     ],
+    'normal with parameter' => ['normal:1', '非法规则'],
+    'reverse with parameter' => ['rev:', '非法规则'],
+    'empty fixed value' => ['fixed:', '只能由数字和字母组成'],
+    'fixed with trailing newline' => ["fixed:abcd\n", '只能由数字和字母组成'],
+    'order with trailing newline' => ["order:1234\n", '参数必须为1-5位的1234组合'],
+    'too many order positions' => ['order:123412', '参数必须为1-5位的1234组合'],
+    'invalid append position' => ['append:5', '参数必须为 1/2/3/4'],
 ]);
 
 it('returns all captcha rules metadata', function () {

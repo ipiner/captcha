@@ -5,7 +5,7 @@
         colors="true"
 >
   <testsuites>
-    <testsuite name="Pin Upload Test Suite">
+    <testsuite name="Pin Captcha Test Suite">
       <directory>tests</directory>
     </testsuite>
   </testsuites>

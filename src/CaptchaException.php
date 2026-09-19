@@ -13,9 +13,13 @@ use Throwable;
  */
 class CaptchaException extends Exception
 {
+    public readonly IError $error;
+
     public function __construct(?IError $err = null, ?Throwable $previous = null)
     {
-        parent::__construct($err ?: Errors::CaptchaMismatch, 0, $previous);
+        $this->error = $err ?? Errors::CaptchaMismatch;
+
+        parent::__construct($this->error, 0, $previous);
         $this->withStatusCode(422)->withResponseMessage(Errors::CaptchaMismatch->message());
     }
 }

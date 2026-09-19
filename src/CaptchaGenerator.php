@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Pin\Captcha;
 
 use GdImage;
-use Pin\Token\Token;
+use RuntimeException;
 
 /**
  * 图形验证码生成器
@@ -14,16 +14,6 @@ use Pin\Token\Token;
  */
 class CaptchaGenerator
 {
-    /**
-     * GD 图像资源
-     */
-    protected GdImage $im;
-
-    /**
-     * 当前画笔颜色
-     */
-    protected int $color;
-
     /**
      * @param  Config  $config  验证码配置
      */
@@ -47,37 +37,14 @@ class CaptchaGenerator
     public function generate(?string $rule = null, bool $dark = false): array
     {
         // 规则优先级：参数 > 配置 > 默认
-        $rule = $rule ?? $this->config->rule;
-        $rule = $rule ?: Rule::Normal->value;
+        $rule = ($rule ?? $this->config->rule) ?: Rule::Normal->value;
+        Rule::parse($rule);
 
-        // 创建真彩色画布（支持透明）
-        $im = imagecreatetruecolor($this->config->width, $this->config->height);
-
-        // 关闭 alpha 混合（关键）
-        imagealphablending($im, false);
-
-        // 开启保存 alpha 通道（关键）
-        imagesavealpha($im, true);
-
-        // 创建透明色
-        $transparent = imagecolorallocatealpha($im, 0, 0, 0, 127);
-
-        // 填充整个背景为透明
-        imagefill($im, 0, 0, $transparent);
-
-        // 字体颜色
-        $color = $this->colorAllocate($im, $this->getTextColor($dark));
-
-        // 生成验证码文本
+        $image = $this->createImage();
+        $color = $this->colorAllocate($image, $this->getTextColor($dark));
         $text = $this->generateText();
-
-        // 写入文字
-        $this->writeText($im, $text, $color);
-
-        // 输出 PNG（内存缓冲）
-        ob_start();
-        imagepng($im);
-        $content = ob_get_clean();
+        $this->writeText($image, $text, $color);
+        $content = $this->encodeImage($image);
 
         return [
             'text' => $text,
@@ -90,6 +57,41 @@ class CaptchaGenerator
             'height' => $this->config->height,
             'data' => 'data:image/png;base64,'.base64_encode($content),
         ];
+    }
+
+    /**
+     * 关闭混合并保留 alpha 通道，使 PNG 背景在明暗主题下均保持透明。
+     */
+    protected function createImage(): GdImage
+    {
+        $image = imagecreatetruecolor($this->config->width, $this->config->height);
+        if ($image === false) {
+            throw new RuntimeException('无法创建验证码画布');
+        }
+
+        imagealphablending($image, false);
+        imagesavealpha($image, true);
+        imagefill($image, 0, 0, imagecolorallocatealpha($image, 0, 0, 0, 127));
+
+        return $image;
+    }
+
+    /**
+     * 无论 PNG 编码是否成功，都恢复调用方的输出缓冲层级。
+     */
+    protected function encodeImage(GdImage $image): string
+    {
+        ob_start();
+
+        try {
+            if (! imagepng($image)) {
+                throw new RuntimeException('无法编码验证码图片');
+            }
+
+            return ob_get_contents();
+        } finally {
+            ob_end_clean();
+        }
     }
 
     /**
@@ -107,26 +109,33 @@ class CaptchaGenerator
      */
     protected function generateText(): string
     {
-        return substr(str_shuffle(Config::CHARS), 0, Config::LENGTH);
+        $characters = Config::CHARS;
+        $lastIndex = strlen($characters) - 1;
+        $text = '';
+
+        // 只抽取所需字符，保留字符不重复的行为，并使用安全随机源。
+        for ($index = 0; $index < Config::LENGTH; $index++) {
+            $selectedIndex = random_int(0, $lastIndex);
+            $text .= $characters[$selectedIndex];
+            $characters[$selectedIndex] = $characters[$lastIndex--];
+        }
+
+        return $text;
     }
 
     /**
      * 随机获取字体颜色
+     *
+     * @return array{int, int, int}
      */
     protected function getTextColor(bool $dark): array
     {
-        if ($dark) {
-            return [
-                random_int(150, 255),
-                random_int(150, 255),
-                random_int(150, 255),
-            ];
-        }
+        [$min, $max] = $dark ? [150, 255] : [1, 150];
 
         return [
-            random_int(1, 150),
-            random_int(1, 150),
-            random_int(1, 150),
+            random_int($min, $max),
+            random_int($min, $max),
+            random_int($min, $max),
         ];
     }
 
@@ -137,7 +146,7 @@ class CaptchaGenerator
      */
     protected function getTextX(int $index): int
     {
-        return intval($this->config->fontSize * $index + $this->config->fontSize / 2);
+        return $this->config->fontSize * $index + intdiv($this->config->fontSize, 2);
     }
 
     /**
@@ -147,12 +156,10 @@ class CaptchaGenerator
      */
     protected function getTextY(): int
     {
-        $random = random_int(
-            intval($this->config->fontSize / 2),
-            min(20, $this->config->fontSize)
-        );
+        $minOffset = intdiv($this->config->fontSize, 2);
+        $maxOffset = max($minOffset, min(20, $this->config->fontSize));
 
-        return $this->config->fontSize + $random;
+        return min($this->config->height - 1, $this->config->fontSize + random_int($minOffset, $maxOffset));
     }
 
     /**
@@ -160,14 +167,11 @@ class CaptchaGenerator
      */
     protected function writeText(GdImage $im, string $text, int $color): void
     {
-        // 随机旋转角度
-        $angle = random_int(-$this->config->angle, $this->config->angle);
-
         foreach (str_split($text) as $index => $char) {
             imagettftext(
                 $im,
                 $this->config->fontSize,
-                $angle,
+                random_int(-$this->config->angle, $this->config->angle),
                 $this->getTextX($index),
                 $this->getTextY(),
                 $color,

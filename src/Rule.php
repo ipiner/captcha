@@ -92,14 +92,16 @@ enum Rule: string
 
     /**
      * 规则列表
+     *
+     * @return list<array{rule: string, label: string, has_param: bool}>
      */
     public static function all(): array
     {
         return array_map(
-            fn (self $r) => [
-                'rule' => $r->value,
-                'label' => $r->label(),
-                'has_param' => $r->hasParam(),
+            static fn (self $rule): array => [
+                'rule' => $rule->value,
+                'label' => $rule->label(),
+                'has_param' => $rule->hasParam(),
             ],
             self::cases()
         );
@@ -108,38 +110,25 @@ enum Rule: string
     /**
      * 解析规则字符串
      *
-     * 返回：
-     *
-     * [Rule $rule, string|null $param]
+     * @return array{self, string|null}
      *
      * @throws CaptchaRuleException
      */
     public static function parse(string $input): array
     {
-        // 无参数规则匹配（如 normal / rev）
-        foreach (self::cases() as $rule) {
-            if (! $rule->hasParam() && $rule->value === $input) {
-                return [$rule, null];
-            }
-        }
-
-        // 有参数规则解析
-        $parts = explode(':', $input, 2);
-
-        if (count($parts) !== 2) {
-            throw new CaptchaRuleException(sprintf('非法规则 "%s"', $input));
-        }
-
-        [$key, $param] = $parts;
-
+        [$key, $param] = array_pad(explode(':', $input, 2), 2, null);
         $rule = self::tryFrom($key);
-
-        if (! $rule) {
+        if ($rule === null) {
             throw new CaptchaRuleException(sprintf('未知规则 "%s"', $key));
         }
 
-        // 参数校验（按规则类型）
-        $rule->validateParam($param);
+        if ($rule->hasParam() !== ($param !== null)) {
+            throw new CaptchaRuleException(sprintf('非法规则 "%s"', $input));
+        }
+
+        if ($param !== null) {
+            $rule->validateParam($param);
+        }
 
         return [$rule, $param];
     }
@@ -166,7 +155,7 @@ enum Rule: string
      */
     private function hasParam(): bool
     {
-        return ! in_array($this, [self::Normal, self::Rev]);
+        return $this !== self::Normal && $this !== self::Rev;
     }
 
     /**
@@ -178,7 +167,7 @@ enum Rule: string
      */
     private function validateFixed(string $param): void
     {
-        if (! preg_match('/^[a-zA-Z0-9]+$/', $param)) {
+        if (! preg_match('/\A[a-zA-Z0-9]+\z/', $param)) {
             throw new CaptchaRuleException(
                 sprintf('规则 "%s" 错误: 只能由数字和字母组成', $this->label())
             );
@@ -189,6 +178,8 @@ enum Rule: string
      * 枚举范围校验
      *
      * 适用于 first / last / prepend / append
+     *
+     * @param  list<string>  $allow
      *
      * @throws CaptchaRuleException
      */
@@ -211,7 +202,7 @@ enum Rule: string
      */
     private function validateOrder(string $param): void
     {
-        if (! preg_match('/^[1234]{1,5}$/', $param)) {
+        if (! preg_match('/\A[1234]{1,5}\z/', $param)) {
             throw new CaptchaRuleException(
                 sprintf('规则 "%s" 错误: 参数必须为1-5位的1234组合', $this->label())
             );
@@ -226,6 +217,7 @@ enum Rule: string
     private function validateParam(string $param): void
     {
         match ($this) {
+            self::Normal, self::Rev => throw new CaptchaRuleException(sprintf('规则 "%s" 不接受参数', $this->value)),
             self::Order => $this->validateOrder($param),
             self::FirstN, self::LastN => $this->validateIn($param, ['1', '2', '3']),
             self::PrependN, self::AppendN => $this->validateIn($param, ['1', '2', '3', '4']),

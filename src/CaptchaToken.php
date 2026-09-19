@@ -6,6 +6,9 @@ namespace Pin\Captcha;
 
 use Illuminate\Redis\Connections\Connection;
 use Illuminate\Support\Facades\Redis;
+use InvalidArgumentException;
+use JsonException;
+use Pin\Support\Facades\Token as TokenFacade;
 use Pin\Support\Json;
 use Pin\Token\Token;
 
@@ -19,19 +22,38 @@ class CaptchaToken
      */
     public function decode(string $encoded): Token
     {
-        $token = \Pin\Support\Facades\Token::decode($encoded);
-        if (! static::isCacheEnabled()) {
+        $token = TokenFacade::decode($encoded);
+        if (! $this->isCacheEnabled()) {
+            $this->validatePayload($token->payload->toArray());
+
             return $token;
         }
 
-        $key = static::key($token->jti);
-        $data = static::connection()->get($key);
-        if (! $data) {
-            throw new CaptchaException(Errors::CaptchaExpired);
+        if (! isset($token->jti) || ! is_string($token->jti) || $token->jti === '') {
+            throw new CaptchaException(Errors::CaptchaTokenInvalid);
         }
-        static::connection()->del($key);
 
-        return new Token(Json::decode($data), $encoded);
+        $connection = $this->connection();
+        $key = $this->key($token->jti);
+        $cached = $connection->get($key);
+
+        if ($cached === null || $cached === false) {
+            throw new CaptchaException(Errors::CaptchaMissing);
+        }
+
+        $connection->del($key);
+
+        try {
+            $data = json_decode($cached, true, 512, JSON_THROW_ON_ERROR);
+        } catch (JsonException $exception) {
+            throw new CaptchaException(Errors::CaptchaTokenInvalid, $exception);
+        }
+
+        $this->validatePayload($data);
+        $token->text = $data['text'];
+        $token->rule = $data['rule'];
+
+        return $token;
     }
 
     /**
@@ -39,15 +61,37 @@ class CaptchaToken
      */
     public function encode(string $text, string $rule, int $ttl): string
     {
-        $data = compact('text', 'rule');
-        if (! static::isCacheEnabled()) {
-            return \Pin\Support\Facades\Token::encode($data, $ttl);
+        if ($ttl <= 0) {
+            throw new InvalidArgumentException('验证码有效期必须大于 0');
         }
 
-        $key = uniqid();
-        static::connection()->setex(static::key($key), $ttl, Json::encode($data));
+        $data = compact('text', 'rule');
+        $this->validatePayload($data);
 
-        return \Pin\Support\Facades\Token::encode(['jti' => $key], $ttl);
+        if (! $this->isCacheEnabled()) {
+            return TokenFacade::encode($data, $ttl);
+        }
+
+        $tokenId = bin2hex(random_bytes(16));
+        $encoded = TokenFacade::encode(['jti' => $tokenId], $ttl);
+        $this->connection()->setex($this->key($tokenId), $ttl, Json::encode($data));
+
+        return $encoded;
+    }
+
+    /**
+     * 缓存和无缓存模式使用相同的载荷约束，避免将其他用途的 Token 当作验证码。
+     */
+    protected function validatePayload(mixed $data): void
+    {
+        if (
+            ! is_array($data)
+            || ! is_string($data['text'] ?? null)
+            || $data['text'] === ''
+            || ! is_string($data['rule'] ?? null)
+        ) {
+            throw new CaptchaException(Errors::CaptchaTokenInvalid);
+        }
     }
 
     /**
@@ -55,7 +99,7 @@ class CaptchaToken
      */
     protected function connection(): Connection
     {
-        return Redis::connection('default');
+        return Redis::connection(config('pin.captcha.redis_connection', 'default'));
     }
 
     /**
@@ -63,7 +107,7 @@ class CaptchaToken
      */
     protected function isCacheEnabled(): bool
     {
-        return config('pin.captcha.cache_enabled');
+        return (bool) config('pin.captcha.cache_enabled', true);
     }
 
     /**
