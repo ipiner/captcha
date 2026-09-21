@@ -80,7 +80,7 @@ class CaptchaToken
     }
 
     /**
-     * 缓存和无缓存模式使用相同的载荷约束，避免将其他用途的 Token 当作验证码。
+     * 缓存和无缓存模式使用相同的载荷约束，避免将其他用途的 Token 当作验证码
      */
     protected function validatePayload(mixed $data): void
     {

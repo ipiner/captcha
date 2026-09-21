@@ -8,12 +8,12 @@ use Pin\Errors\Registry;
 use Pin\Support\ServiceProvider;
 
 /**
- * 验证码服务提供者。
+ * 验证码服务提供者
  */
 class CaptchaServiceProvider extends ServiceProvider
 {
     /**
-     * 注册配置与服务，允许其他服务提供者在 boot 阶段解析验证码服务。
+     * 注册配置与服务，允许其他服务提供者在 boot 阶段解析验证码服务
      */
     public function register(): void
     {

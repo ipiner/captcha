@@ -60,7 +60,7 @@ class CaptchaGenerator
     }
 
     /**
-     * 关闭混合并保留 alpha 通道，使 PNG 背景在明暗主题下均保持透明。
+     * 关闭混合并保留 alpha 通道，使 PNG 背景在明暗主题下均保持透明
      */
     protected function createImage(): GdImage
     {
@@ -77,7 +77,7 @@ class CaptchaGenerator
     }
 
     /**
-     * 无论 PNG 编码是否成功，都恢复调用方的输出缓冲层级。
+     * 无论 PNG 编码是否成功，都恢复调用方的输出缓冲层级
      */
     protected function encodeImage(GdImage $image): string
     {
@@ -113,7 +113,7 @@ class CaptchaGenerator
         $lastIndex = strlen($characters) - 1;
         $text = '';
 
-        // 只抽取所需字符，保留字符不重复的行为，并使用安全随机源。
+        // 只抽取所需字符，保留字符不重复的行为，并使用安全随机源
         for ($index = 0; $index < Config::LENGTH; $index++) {
             $selectedIndex = random_int(0, $lastIndex);
             $text .= $characters[$selectedIndex];

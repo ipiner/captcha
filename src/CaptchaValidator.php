@@ -67,7 +67,7 @@ class CaptchaValidator
 
         $result->token = $token;
         $result->text = $token->text;
-        // 外部规则优先；空规则沿用 Token 规则，最终回退到正常验证。
+        // 外部规则优先；空规则沿用 Token 规则，最终回退到正常验证
         $result->rule = $rule ?: ($token->rule ?: Rule::Normal->value);
 
         try {
