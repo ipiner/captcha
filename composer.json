@@ -10,7 +10,7 @@
   "license": "MIT",
   "require": {
     "ext-gd": "*",
-    "ipiner/pin": "^1.0"
+    "ipiner/pin": "dev-main"
   },
   "require-dev": {
     "dedoc/scramble": "^0.13.22",
